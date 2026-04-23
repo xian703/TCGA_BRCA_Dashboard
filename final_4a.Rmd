@@ -1,0 +1,209 @@
+---
+title: "TCGA-BRCA: Tumor Purity, Radiotherapy & Survival"
+output:
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+    theme: flatly
+    navbar:
+      - { title: "GitHub Repository", href: "https://github.com/xian703/TCGA_BRCA_Dashboard", align: right, icon: "fa-github" }
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+packages <- c("data.table", "dplyr", "plotly", "DT", "flexdashboard")
+for (pkg in packages) {
+  if (!requireNamespace(pkg, quietly = TRUE)) install.packages(pkg)
+}
+
+library(data.table)
+library(dplyr)
+library(plotly)
+library(DT)
+library(flexdashboard)
+```
+
+```{r load-data, include=FALSE}
+# ---------------------------------------------------------------
+# IMPORTANT: Update this path to your actual data file location
+# ---------------------------------------------------------------
+df <- as.data.frame(fread("E:/AA msph bios/Thesis/Data/TCGA_BRCA_combined.csv"))
+
+df_clean <- df %>%
+  filter(
+    !is.na(Tumor_purity),
+    !is.na(overall_survival),
+    !is.na(status),
+    !is.na(radiation_therapy)
+  ) %>%
+  mutate(
+    status_num   = ifelse(tolower(as.character(status)) %in% c("dead", "1"), 1L, 0L),
+    status_label = ifelse(status_num == 1, "Dead", "Alive"),
+    purity_group = ifelse(
+      Tumor_purity >= median(Tumor_purity, na.rm = TRUE),
+      "High Purity",
+      "Low Purity"
+    ),
+    RT    = ifelse(tolower(as.character(radiation_therapy)) == "yes", "RT", "No RT"),
+    group = paste(RT, purity_group, sep = " + ")
+  )
+```
+
+
+Visualizations {data-icon="fa-chart-bar"}
+=====================================
+
+Column {data-width=550}
+-------------------------------------
+
+### Tumor Purity vs. Overall Survival by Radiotherapy Status
+
+```{r widget1}
+plot_ly(
+  data      = df_clean,
+  x         = ~Tumor_purity,
+  y         = ~overall_survival,
+  color     = ~RT,
+  colors    = c("No RT" = "#EF553B", "RT" = "#636EFA"),
+  type      = "scatter",
+  mode      = "markers",
+  marker    = list(size = 7, opacity = 0.60),
+  hoverinfo = "text",
+  text      = ~paste(
+    "<b>Radiotherapy:</b>",         RT,
+    "<br><b>Tumor Purity:</b>",     round(Tumor_purity, 3),
+    "<br><b>Overall Survival:</b>", round(overall_survival, 0), "days",
+    "<br><b>Vital Status:</b>",     status_label,
+    "<br><b>Purity Group:</b>",     purity_group
+  )
+) %>%
+  layout(
+    title = list(
+      text = "Tumor Purity vs. Overall Survival",
+      font = list(size = 15)
+    ),
+    xaxis = list(
+      title      = "Tumor Purity (proportion)",
+      titlefont  = list(size = 13),
+      tickfont   = list(size = 11)
+    ),
+    yaxis = list(
+      title      = "Overall Survival (days)",
+      titlefont  = list(size = 13),
+      tickfont   = list(size = 11)
+    ),
+    legend = list(
+      title    = list(text = "<b>Radiotherapy</b>"),
+      font     = list(size = 12)
+    ),
+    margin = list(t = 50)
+  ) %>%
+  config(displayModeBar = TRUE, scrollZoom = TRUE)
+```
+
+Column {data-width=450}
+-------------------------------------
+
+### Overall Survival Distribution by Treatment and Purity Group
+
+```{r widget2}
+group_colors <- c(
+  "No RT + High Purity" = "#EF553B",
+  "No RT + Low Purity"  = "#FF9999",
+  "RT + High Purity"    = "#636EFA",
+  "RT + Low Purity"     = "#99AAFB"
+)
+
+plot_ly(
+  data      = df_clean,
+  x         = ~group,
+  y         = ~overall_survival,
+  color     = ~group,
+  colors    = group_colors,
+  type      = "box",
+  boxpoints = "all",
+  jitter    = 0.25,
+  pointpos  = 0,
+  marker    = list(size = 4, opacity = 0.45),
+  hoverinfo = "text",
+  text      = ~paste(
+    "<b>Group:</b>",                group,
+    "<br><b>Overall Survival:</b>", round(overall_survival, 0), "days",
+    "<br><b>Tumor Purity:</b>",     round(Tumor_purity, 3),
+    "<br><b>Radiotherapy:</b>",     RT,
+    "<br><b>Vital Status:</b>",     status_label
+  ),
+  showlegend = FALSE
+) %>%
+  layout(
+    title = list(
+      text = "Survival Distribution by Treatment & Purity Group",
+      font = list(size = 15)
+    ),
+    xaxis = list(
+      title      = "Patient Group",
+      titlefont  = list(size = 13),
+      tickfont   = list(size = 10),
+      tickangle  = -15
+    ),
+    yaxis = list(
+      title      = "Overall Survival (days)",
+      titlefont  = list(size = 13),
+      tickfont   = list(size = 11)
+    ),
+    margin = list(t = 50, b = 80)
+  ) %>%
+  config(displayModeBar = TRUE)
+```
+
+> **Key Findings:** Most patients are concentrated at relatively high tumor purity values. The RT and No RT groups overlap substantially in the scatterplot, suggesting radiotherapy alone does not create a clearly separated survival pattern. High-purity groups retain more long-surviving observations in the boxplot, and the interactive hover labels allow individual-level inspection across all four subgroups.
+
+> **Why It Matters:** Understanding how tumor purity interacts with radiotherapy response in breast cancer can help guide personalized treatment decisions. This dashboard provides researchers an interactive tool to explore survival heterogeneity across purity and treatment subgroups using TCGA-BRCA data.
+
+
+About the Data {data-icon="fa-info-circle"}
+=====================================
+
+### Dataset Description
+
+**Data Source:** The Cancer Genome Atlas Breast Cancer (TCGA-BRCA) dataset, publicly available through the [GDC Data Portal](https://portal.gdc.cancer.gov/).
+
+**Sample Size:** After removing records with missing values in tumor purity, overall survival, vital status, or radiation therapy, the analytic sample includes **`r nrow(df_clean)` patients**.
+
+**Data Collection:** Clinical and genomic data were collected as part of a multi-center observational study coordinated by the National Cancer Institute; tumor purity estimates were derived from computational analysis of bulk tumor RNA-seq profiles.
+
+**Study Population:** Adult patients diagnosed with primary invasive breast carcinoma enrolled in the TCGA-BRCA cohort across multiple U.S. academic medical centers.
+
+**Time Period:** Data were collected from approximately 2000 to 2013 and are publicly accessible through the GDC portal.
+
+---
+
+### Group Summary Table
+
+```{r summary-table}
+summary_tbl <- df_clean %>%
+  group_by(
+    `Treatment Group` = RT,
+    `Purity Group`    = purity_group
+  ) %>%
+  summarise(
+    `N Patients`      = n(),
+    `N Events (Dead)` = sum(status_num),
+    `Median Survival (days)` = round(median(overall_survival), 0),
+    `Median Tumor Purity`    = round(median(Tumor_purity), 3),
+    .groups = "drop"
+  )
+
+datatable(
+  summary_tbl,
+  options = list(
+    pageLength  = 10,
+    dom         = "t",
+    autoWidth   = TRUE,
+    scrollX     = TRUE
+  ),
+  rownames = FALSE,
+  caption  = "Summary statistics by radiotherapy and tumor purity subgroup"
+)
+```
